@@ -1,0 +1,243 @@
+from mesa import Model
+from mesa.time import RandomActivation
+from mesa.space import MultiGrid
+from mesa.datacollection import DataCollector
+from agent_sensors_model1 import Forklift, NormalWall, StorageWall, StorageZone, WaitPoint
+import numpy as np
+import matplotlib.pyplot as plt
+import argparse
+import pandas as pd
+from scipy.stats import truncnorm
+
+class WarehouseModel(Model):
+    def __init__(self, width, height, total_time_hours=None, max_cycles=None):
+        super().__init__()
+        self.grid = MultiGrid(width, height, False)  # Disable toroidal (wrap-around) grid
+        self.schedule = RandomActivation(self)
+        self.datacollector = DataCollector(
+            agent_reporters={
+                "Energy Consumption": lambda a: a.energy_consumption if isinstance(a, Forklift) else None,
+                "Total Distance": lambda a: a.total_distance if isinstance(a, Forklift) else None,
+                "Unloading Cycles": lambda a: a.unloading_cycles if isinstance(a, Forklift) else None,
+                "Total Time": lambda a: a.total_time if isinstance(a, Forklift) else None
+            }
+        )
+
+        # Generate Monte Carlo samples
+        self.generate_monte_carlo_samples()
+
+        # Print Monte Carlo samples
+        self.print_samples()
+
+        # Create one forklift and place it at a specific position (e.g., (0, 0))
+        self.forklift = Forklift(
+            1, self,
+            self.empty_speeds[0],
+            self.loaded_speeds[0],
+            self.load_times[0],
+            self.unload_times[0]
+        )
+        self.schedule.add(self.forklift)
+        start_x, start_y = 13, 7  # Set the specific starting position here
+        self.grid.place_agent(self.forklift, (start_x, start_y))
+
+        self.loading_slot_set = False  # Flag to track if loading slot is set
+        self.max_time_seconds = total_time_hours * 3600 if total_time_hours is not None else None
+        self.max_cycles = max_cycles
+
+        # Draw warehouse layout
+        self.draw_warehouse()
+
+    def generate_monte_carlo_samples(self):
+        # Define means and standard deviations
+        v_empty_mean = 4.17
+        sigma_empty = 0.4
+        v_loaded_mean = 1.94
+        sigma_loaded = 0.3
+        t_load_mean = 150
+        sigma_load = 50
+        t_unload_mean = 150
+        sigma_unload = 50
+
+        # Generate 1000 random samples for each factor
+        self.empty_speeds = np.random.normal(v_empty_mean, sigma_empty, 1000000)
+        self.loaded_speeds = np.random.normal(v_loaded_mean, sigma_loaded, 1000000)
+
+        # Generate truncated normal distribution for load and unload times
+        lower, upper = 30, np.inf  # Truncate at 30 and above
+        self.load_times = truncnorm(
+            (lower - t_load_mean) / sigma_load,
+            (upper - t_load_mean) / sigma_load,
+            loc=t_load_mean,
+            scale=sigma_load
+        ).rvs(1000000)
+
+        self.unload_times = truncnorm(
+            (lower - t_unload_mean) / sigma_unload,
+            (upper - t_unload_mean) / sigma_unload,
+            loc=t_unload_mean,
+            scale=sigma_unload
+        ).rvs(1000000)
+
+    def print_samples(self):
+        # Print the first 5 samples of each factor
+        print("Empty Speeds (first 5 samples):", self.empty_speeds[:5])
+        print("Loaded Speeds (first 5 samples):", self.loaded_speeds[:5])
+        print("Load Times (first 5 samples):", self.load_times[:5])
+        print("Unload Times (first 5 samples):", self.unload_times[:5])
+
+        # Visualize the samples using histograms
+        plt.figure(figsize=(10, 8))
+
+        plt.subplot(2, 2, 1)
+        plt.hist(self.empty_speeds, bins=30, edgecolor='black')
+        plt.title('Empty Speeds')
+
+        plt.subplot(2, 2, 2)
+        plt.hist(self.loaded_speeds, bins=30, edgecolor='black')
+        plt.title('Loaded Speeds')
+
+        plt.subplot(2, 2, 3)
+        plt.hist(self.load_times, bins=30, edgecolor='black')
+        plt.title('Load Times')
+
+        plt.subplot(2, 2, 4)
+        plt.hist(self.unload_times, bins=30, edgecolor='black')
+        plt.title('Unload Times')
+
+        plt.tight_layout()
+
+    def draw_warehouse(self):
+        #third storage wall top left
+        for x in range(0, 8):
+            wall = StorageWall((x, 19), self)
+            self.schedule.add(wall)
+            self.grid.place_agent(wall, (x, 22))
+        #fourth storage wall top left
+        for x in range(0, 8):
+            wall = StorageWall((x, 17), self)
+            self.schedule.add(wall)
+            self.grid.place_agent(wall, (x, 20))
+        #fifth storage wall top left
+        for x in range(3, 8):
+            wall = StorageWall((x, 15), self)
+            self.schedule.add(wall)
+            self.grid.place_agent(wall, (x, 18))
+         #third waitpoint horizontal
+        for x in range(3, 8):
+            wall = WaitPoint((x, 18), self)
+            self.schedule.add(wall)
+            self.grid.place_agent(wall, (x, 21))
+         #fourth waitpoint horizontal
+        for x in range(3, 8):
+            wall = WaitPoint((x, 16), self)
+            self.schedule.add(wall)
+            self.grid.place_agent(wall, (x, 19))
+        # First storage wall vertical
+        for y in range(18, 30):
+            wall = StorageWall((15, y), self)
+            self.schedule.add(wall)
+            self.grid.place_agent(wall, (15, y))
+        # Second storage wall vertical
+        for y in range(18, 30):
+            wall = StorageWall((17, y), self)
+            self.schedule.add(wall)
+            self.grid.place_agent(wall, (17, y))
+        # First waitpoint vertical
+        for y in range(18, 30):
+            wall = WaitPoint((16, y), self)
+            self.schedule.add(wall)
+            self.grid.place_agent(wall, (16, y))
+        # Vertical wall
+        for y in range(14, 29):
+            wall = NormalWall((17, y), self)
+            self.schedule.add(wall)
+            self.grid.place_agent(wall, (18, y))
+        # Second vertical wall
+        for y in range(0, 12):
+            wall = NormalWall((17, y), self)
+            self.schedule.add(wall)
+            self.grid.place_agent(wall, (18, y))
+        # third vertical wall
+        for y in range(18, 29):
+            wall = NormalWall((14, y), self)
+            self.schedule.add(wall)
+            self.grid.place_agent(wall, (14, y))
+        # first horizontal wall
+        for x in range(0, 8):
+            wall = NormalWall((x, 10), self)
+            self.schedule.add(wall)
+            self.grid.place_agent(wall, (x, 17))
+        # boundary horizontal wall top right
+        for x in range(18, 30):
+            wall = NormalWall((x, 26), self)
+            self.schedule.add(wall)
+            self.grid.place_agent(wall, (x, 29))
+        # boundary horizontal wall top left
+        for x in range(0, 14):
+            wall = NormalWall((x, 26), self)
+            self.schedule.add(wall)
+            self.grid.place_agent(wall, (x, 29))
+        # Add unloading zone
+        for x in range(19, 23):
+            for y in range(16, 20):
+                storage_zone = StorageZone((x, y), self)
+                self.schedule.add(storage_zone)
+                self.grid.place_agent(storage_zone, (x, y))
+
+    def randomize_loading_slot(self):
+        if not self.loading_slot_set:
+            # Find all wait point agents
+            wall_agents = [agent for agent in self.schedule.agents if isinstance(agent, WaitPoint)]
+            if wall_agents:
+                # Choose a random wait point agent
+                random_wall = self.random.choice(wall_agents)
+                random_wall.color = "red"
+                self.loading_slot_set = True  # Mark that the loading slot has been set
+
+    def reset_loading_slot(self):
+        # Reset the current red cell to yellow
+        for agent in self.schedule.agents:
+            if isinstance(agent, WaitPoint) and agent.color == "red":
+                agent.color = "yellow"
+                break
+        # Set a new loading slot
+        self.loading_slot_set = False
+        self.randomize_loading_slot()
+
+    def get_total_time(self):
+        return self.forklift.total_time
+
+    def format_time(self, seconds):
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        seconds = seconds % 60
+        return f"{int(hours)}h {int(minutes)}m {seconds:.2f}s"
+
+    def step(self):
+        self.schedule.step()
+        self.datacollector.collect(self)
+        total_time = self.get_total_time()
+
+        # Only set the loading slot once
+        if not self.loading_slot_set:
+            self.randomize_loading_slot()
+
+        # Print the total time and energy consumption
+        formatted_time = self.format_time(total_time)
+        energy_consumption = self.forklift.calculate_energy_consumption()
+        print(f"Total Time: {formatted_time}")  # Print total time in a readable format
+        print(f"Energy Consumption: {energy_consumption:.2f} kWh")  # Print energy consumption
+
+        # Check if the forklift has completed the specified total time or cycles
+        if (self.max_time_seconds is not None and total_time >= self.max_time_seconds) or (self.max_cycles is not None and self.forklift.unloading_cycles >= self.max_cycles):
+            self.running = False  # Stop the simulation
+
+# Running the Simulation
+if __name__ == "__main__":
+    width, height = 30, 30
+    warehouse = WarehouseModel(width, height, max_cycles=10)
+
+    # Run the model for a certain number of steps
+    while warehouse.running:
+        warehouse.step()
