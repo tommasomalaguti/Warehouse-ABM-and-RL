@@ -12,3 +12,5 @@ The findings also highlight important considerations regarding the broader susta
 
 This thesis concludes that the integration of sensor-based mapping systems and RL models holds
 significant potential to revolutionize warehouse logistics by improving operational eﬃciency, reducing energy consumption, and contributing to environmental sustainability. However, realizing the full environmental benefits of these technologies requires balancing their operational gains with sustainable growth practices, ensuring that eﬃciency improvements do not inadvertently lead to greater environmental impact.
+
+Link to the thesis: https://drive.google.com/file/d/1cpE5OuzsN3eyKeCH6jy2f8yidBQJ8nFX/view?usp=drive_link
